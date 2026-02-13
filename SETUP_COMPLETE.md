@@ -35,7 +35,7 @@ You should see the help message.
 cd ~/my-awesome-project
 
 # Create .env.local with your Qoder PAT
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 
 # Run orchestration
 qoder-orchestrate "Add user authentication with JWT tokens"
@@ -55,12 +55,12 @@ When you run `qoder-orchestrate` from any directory:
 ```bash
 # Project 1
 cd ~/project-1
-echo "qoder_pat=YOUR_PAT" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT" > .env.local
 qoder-orchestrate "Build payment system"
 
 # Project 2
 cd ~/project-2
-echo "qoder_pat=YOUR_PAT" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT" > .env.local
 qoder-orchestrate "Add analytics dashboard"
 ```
 

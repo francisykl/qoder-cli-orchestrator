@@ -235,10 +235,13 @@ class Orchestrator:
         if env_file.exists():
             with open(env_file, 'r') as f:
                 for line in f:
-                    if line.strip().startswith("qoder_pat="):
-                        pat = line.split("=", 1)[1].strip()
-                        logger.info("PAT loaded from .env.local")
-                        break
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        key = key.strip()
+                        if key in ["QODER_PERSONAL_ACCESS_TOKEN", "qoder_pat"]:
+                            pat = val.strip()
+                            logger.info(f"PAT loaded from .env.local ({key})")
+                            break
         
         if not pat:
             logger.warning("PAT not found in .env.local")
@@ -246,8 +249,8 @@ class Orchestrator:
             
             # Save to .env.local
             with open(env_file, 'a') as f:
-                f.write(f"\nqoder_pat={pat}\n")
-            logger.info("PAT saved to .env.local")
+                f.write(f"\nQODER_PERSONAL_ACCESS_TOKEN={pat}\n")
+            logger.info("PAT saved to .env.local as QODER_PERSONAL_ACCESS_TOKEN")
             
         return pat
 
@@ -378,7 +381,7 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
             
             # Prepare environment
             env = os.environ.copy()
-            env["QODER_PAT"] = self.pat
+            env["QODER_PERSONAL_ACCESS_TOKEN"] = self.pat
             
             # Build command
             cmd = ["qoder", "--yolo", "-p", enhanced_description]

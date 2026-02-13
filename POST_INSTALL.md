@@ -36,7 +36,7 @@ qoder-orchestrate --help
 
 2. **Create .env.local with your Qoder PAT**:
    ```bash
-   echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+   echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
    ```
 
 3. **Run orchestration**:

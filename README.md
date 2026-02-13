@@ -67,7 +67,7 @@ Replace `3.9` with your Python version. Check with `python3 --version`.
 
 ### Set Up PAT
 ```bash
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 ```
 
 ## 🚀 Quick Start
@@ -371,7 +371,7 @@ npm install -g qoder
 
 2. Set up your PAT in `.env.local`:
 ```bash
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 ```
 
 ## Usage
@@ -460,7 +460,7 @@ You can add custom subagents by creating `.md` files in the `subagents/` directo
 
 ## Troubleshooting
 
-**PAT not found**: Ensure `.env.local` contains `qoder_pat=YOUR_PAT`
+**PAT not found**: Ensure `.env.local` contains `QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT`
 
 **Qoder CLI not found**: Install with `npm install -g qoder`
 

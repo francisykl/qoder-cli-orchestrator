@@ -119,7 +119,7 @@ You are a backend developer. Focus on:
 Create `.env.local`:
 
 ```bash
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 ```
 
 > **Security**: `.env.local` is gitignored by default.

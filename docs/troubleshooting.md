@@ -87,7 +87,7 @@ Qoder PAT not found in .env.local
 
 **Solution**:
 ```bash
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 ```
 
 Get your PAT from: https://qoder.com/settings/tokens
@@ -218,7 +218,7 @@ qoder -p "test" --yolo
 
 3. **Verify PAT**:
 ```bash
-grep qoder_pat .env.local
+grep QODER_PERSONAL_ACCESS_TOKEN .env.local
 ```
 
 4. **Disable retry temporarily**:

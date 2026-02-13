@@ -67,15 +67,15 @@ class Orchestrator:
         if os.path.exists(".env.local"):
             with open(".env.local", "r") as f:
                 for line in f:
-                    if line.startswith("qoder_pat="):
+                    if line.startswith("QODER_PERSONAL_ACCESS_TOKEN="):
                         pat = line.split("=")[1].strip()
                         break
         
         if not pat:
-            pat = input("Enter your 'qoder_pat': ")
+            pat = input("Enter your 'QODER_PERSONAL_ACCESS_TOKEN': ")
             # Optionally save to .env.local
             with open(".env.local", "a") as f:
-                f.write(f"\nqoder_pat={pat}\n")
+                f.write(f"\nQODER_PERSONAL_ACCESS_TOKEN={pat}\n")
         return pat
 
     def _ensure_qoder_cli(self):

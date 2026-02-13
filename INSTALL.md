@@ -33,7 +33,7 @@ When you run `qoder-orchestrate` from any directory:
 cd ~/my-awesome-project
 
 # Create .env.local with your PAT
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 
 # Run orchestration
 qoder-orchestrate "Add user authentication"
@@ -127,7 +127,7 @@ pip show qoder-orchestrator
 cd ~/my-project
 
 # Create .env.local with PAT
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 
 # Create Qoder context structure
 mkdir -p .qoder/wiki .qoder/skills
@@ -178,12 +178,12 @@ You can use the same global installation for multiple projects:
 ```bash
 # Project 1
 cd ~/project-1
-echo "qoder_pat=PAT_1" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=PAT_1" > .env.local
 qoder-orchestrate "Build feature A"
 
 # Project 2
 cd ~/project-2
-echo "qoder_pat=PAT_2" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=PAT_2" > .env.local
 qoder-orchestrate "Build feature B"
 ```
 

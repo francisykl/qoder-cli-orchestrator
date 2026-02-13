@@ -39,7 +39,7 @@ You should see the help message.
 cd ~/my-project
 
 # Create .env.local with your PAT
-echo "qoder_pat=YOUR_PAT_HERE" > .env.local
+echo "QODER_PERSONAL_ACCESS_TOKEN=YOUR_PAT_HERE" > .env.local
 
 # Run orchestration
 qoder-orchestrate "Add user authentication"

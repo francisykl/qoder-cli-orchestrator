@@ -13,10 +13,10 @@ import argparse
 import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from .config import load_config, OrchestratorConfig
 from .llm_client import create_llm_client
+from .context_cache import ContextCache
 
 # Initial logging setup (will be reconfigured per orchestrator instance)
 logger = logging.getLogger(__name__)
@@ -36,8 +36,9 @@ class Task:
 
 class QoderContext:
     """Manages Qoder wiki, skills, rules, and subagent metadata for the project."""
-    def __init__(self, project_dir: Path):
+    def __init__(self, project_dir: Path, config: Optional[OrchestratorConfig] = None):
         self.project_dir = project_dir
+        self.config = config or load_config(project_dir=project_dir)
         self.wiki_dir = project_dir / ".qoder" / "wiki"
         self.skills_dir = project_dir / ".qoder" / "skills"
         self.rules_file = project_dir / ".qoder" / "rules.md"
@@ -46,6 +47,11 @@ class QoderContext:
         self.rules: str = ""
         self.subagents: Dict[str, str] = {}  # Full content including frontmatter
         self.subagent_metadata: Dict[str, Dict[str, Any]] = {}  # Parsed metadata
+        
+        # Initialize context cache in project directory
+        cache_dir = self.project_dir / self.config.cache.cache_dir
+        self.cache = ContextCache(self.config.cache, cache_dir=cache_dir)
+        
         self._load_all()
 
     def _load_all(self):
@@ -167,6 +173,24 @@ class QoderContext:
         
         # Default to architect for planning tasks
         return 'architect'
+    
+    def get_codebase_summary(self, llm_client: Any, force: bool = False) -> str:
+        """
+        Get or generate a high-level codebase summary, using cache if available.
+        """
+        cache_key = "codebase_summary_v1"
+        
+        if not force:
+            cached_summary = self.cache.get(cache_key)
+            if cached_summary:
+                logger.info("Using cached codebase summary")
+                return cached_summary
+        
+        logger.info("Generating fresh codebase summary analysis...")
+        summary = llm_client.analyze_codebase(str(self.project_dir))
+        
+        self.cache.put(summary, cache_key)
+        return summary
     
     def get_context_for_task(self, task: 'Task') -> str:
         """Build context string for a task including relevant wiki/skills/rules."""
@@ -322,10 +346,10 @@ class Orchestrator:
         self.project_dir = Path(project_dir).resolve()
         self.tasks: Dict[str, Task] = {}
         self.registry = IntegrationRegistry()
-        self.qoder_context = QoderContext(self.project_dir)
+        self.config = load_config(project_dir=self.project_dir)
+        self.qoder_context = QoderContext(self.project_dir, config=self.config)
         self.decision_maker = DecisionMaker()
         self.current_iteration = 0
-        self.config = load_config(project_dir=self.project_dir)
         self._setup_logging()
         self._setup_output_dir()
         self.pat = self._get_pat()
@@ -417,12 +441,18 @@ class Orchestrator:
         logger.info(f"Original Prompt: {self.original_prompt}")
         
         # Get project context
-        # We use a dummy Task to get global context (rules, general wiki)
+        # 1. Get high-level codebase summary (cached)
+        codebase_summary = self.qoder_context.get_codebase_summary(self.llm_client)
+        
+        # 2. Get specific context for splitting (rules, general wiki)
         dummy_task = Task("split", "Splitting tasks", "architect", component="general")
         context = self.qoder_context.get_context_for_task(dummy_task)
         
+        # Combine for splitting
+        full_context = f"{codebase_summary}\n\n{context}"
+        
         # Call LLM to split tasks
-        raw_tasks = self.llm_client.split_tasks(self.original_prompt, context)
+        raw_tasks = self.llm_client.split_tasks(self.original_prompt, full_context)
         
         if not raw_tasks:
             logger.error("Failed to split tasks. Falling back to default tasks.")
@@ -748,6 +778,11 @@ class Orchestrator:
                         logger.error(f"Task {task.id} raised exception: {e}")
                         task.status = "failed"
                         task.error = str(e)
+                
+                # Refresh codebase analysis cache for the next iteration
+                # This ensures the LLM sees the results of the previous tasks
+                logger.info("Refreshing codebase analysis cache...")
+                self.qoder_context.get_codebase_summary(self.llm_client, force=True)
                 
                 self.current_iteration += 1
                 self._save_plan()

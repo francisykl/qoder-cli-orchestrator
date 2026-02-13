@@ -108,6 +108,11 @@ class CLIBasedLLMClient(ABC):
         pass
     
     @abstractmethod
+    def analyze_codebase(self, project_path: str) -> str:
+        """Perform a high-level analysis of the codebase."""
+        pass
+    
+    @abstractmethod
     def analyze_objective(
         self,
         original_prompt: str,
@@ -245,6 +250,30 @@ Rules:
             logger.error(f"Failed to parse task split response as JSON: {e}")
             logger.debug(f"Response was: {response.content}")
             return []
+
+    def analyze_codebase(self, project_path: str) -> str:
+        """
+        Perform a high-level analysis of the codebase using Qoder CLI.
+        """
+        # We'll use a specific prompt designed to get a structural overview
+        analysis_prompt = f"""Perform a high-level structural analysis of the codebase at {project_path}.
+        
+        Provide a summary including:
+        1. Key components and their responsibilities
+        2. Main folder structure
+        3. Critical entry points (main scripts, apps)
+        4. Important dependencies or tech stack used
+        
+        Keep it concise but informative for a development orchestrator.
+        """
+        
+        response = self.execute(analysis_prompt)
+        
+        if not response.success:
+            logger.error("Codebase analysis failed")
+            return "Analysis failed."
+            
+        return response.content
     
     def analyze_objective(
         self,
@@ -535,6 +564,12 @@ Return JSON: {{"should_update": bool, "suggested_content": str, "reasoning": str
             pass
         
         return None
+
+    def analyze_codebase(self, project_path: str) -> str:
+        """Analyze codebase using Claude CLI."""
+        analysis_prompt = f"Analyze the following project structure and provide a high-level summary: {project_path}"
+        response = self.execute(analysis_prompt)
+        return response.content if response.success else "Analysis failed."
 
 
 def create_llm_client(provider: str = "qoder", **kwargs) -> CLIBasedLLMClient:

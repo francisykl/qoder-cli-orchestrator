@@ -1,0 +1,98 @@
+# Qoder Orchestration Configuration
+# Place this file in your project root as .qoder-orchestrate.yaml
+
+# Project directory (default: current directory)
+# project_dir: "."
+
+# Logging configuration
+log_level: INFO  # DEBUG, INFO, WARNING, ERROR
+log_file: orchestration.log
+
+# Feature flags
+enable_learning: true  # Auto-update wiki when approaches deviate
+enable_contract_verification: true  # Verify frontend/backend API contracts
+enable_incremental_updates: true  # Only re-run affected tasks
+
+# Execution configuration
+execution:
+  max_parallel: 3  # Maximum number of tasks to run in parallel
+  max_iterations: 10  # Maximum iterations before stopping
+  task_timeout: 300  # Task timeout in seconds (5 minutes)
+  enable_speculative: true  # Start likely-needed tasks early
+  enable_batch_processing: true  # Group similar tasks
+  batch_similarity_threshold: 0.7  # Similarity threshold for batching (0-1)
+
+# Retry configuration
+retry:
+  max_attempts: 3  # Maximum retry attempts per task
+  backoff_factor: 2.0  # Exponential backoff multiplier
+  max_backoff: 300.0  # Maximum backoff time in seconds
+  retry_on_errors:  # Error types to retry on
+    - timeout
+    - network
+    - temporary
+
+# LLM configuration (CLI-based tools)
+llm:
+  provider: qoder  # qoder (default), claude
+  # For Qoder CLI: uses /ask mode by default
+  # For Claude CLI: requires claude CLI installation
+  temperature: 0.7  # LLM temperature (0-1)
+  max_tokens: 4000  # Maximum tokens per request
+  timeout: 60  # CLI command timeout in seconds
+
+# Semantic search configuration
+semantic_search:
+  enabled: true  # Use embeddings for context retrieval
+  model_name: all-MiniLM-L6-v2  # Sentence transformer model
+  similarity_threshold: 0.5  # Minimum similarity score (0-1)
+  max_results: 5  # Maximum number of similar documents to return
+  cache_embeddings: true  # Cache embeddings for performance
+
+# Cache configuration
+cache:
+  enabled: true  # Enable context caching
+  max_size_mb: 100  # Maximum cache size in MB
+  ttl_seconds: 3600  # Time-to-live for cache entries (1 hour)
+  cache_dir: .qoder-cache  # Cache directory
+
+# Rollback configuration
+rollback:
+  enabled: true  # Enable git-based rollback
+  create_checkpoints: true  # Create checkpoints before tasks
+  keep_checkpoints: 10  # Number of checkpoints to keep
+  auto_rollback_on_failure: false  # Automatically rollback on failure
+
+# Validation configuration
+validation:
+  enabled: true  # Enable pre-flight validation
+  check_git: true  # Check git repository status
+  check_qoder_cli: true  # Verify Qoder CLI installation
+  check_dependencies: true  # Check Python dependencies
+  fail_on_warnings: false  # Fail validation on warnings
+
+# Example configurations for different scenarios:
+
+# Minimal configuration (use defaults):
+# execution:
+#   max_parallel: 2
+# llm:
+#   provider: qoder
+
+# High-performance configuration:
+# execution:
+#   max_parallel: 5
+#   enable_speculative: true
+# cache:
+#   max_size_mb: 500
+# semantic_search:
+#   cache_embeddings: true
+
+# CI/CD configuration:
+# execution:
+#   max_parallel: 1
+#   max_iterations: 5
+# validation:
+#   fail_on_warnings: true
+# rollback:
+#   auto_rollback_on_failure: true

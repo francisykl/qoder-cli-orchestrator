@@ -229,26 +229,39 @@ Rules:
         
         # Try to parse JSON from response
         try:
-            # Look for JSON array in the response
-            content = response.content
+            content = response.content.strip()
             
-            # Try to extract JSON from markdown code blocks
+            # 1. Try to extract JSON from markdown code blocks
+            json_start = -1
             if "```json" in content:
-                start = content.find("```json") + 7
-                end = content.find("```", start)
-                content = content[start:end].strip()
+                json_start = content.find("```json") + 7
             elif "```" in content:
-                start = content.find("```") + 3
-                end = content.find("```", start)
-                content = content[start:end].strip()
+                json_start = content.find("```") + 3
+                
+            if json_start != -1:
+                json_end = content.find("```", json_start)
+                if json_end != -1:
+                    content = content[json_start:json_end].strip()
             
-            tasks = json.loads(content)
+            # 2. If parsing fails, try to find the first '[' and last ']' 
+            # (handles cases with preamble/postamble text)
+            try:
+                tasks = json.loads(content)
+            except json.JSONDecodeError:
+                start_idx = content.find("[")
+                end_idx = content.rfind("]")
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    content = content[start_idx:end_idx+1].strip()
+                    tasks = json.loads(content)
+                else:
+                    raise # Re-raise to be caught by outer block
+            
             logger.info(f"Successfully split into {len(tasks)} tasks")
             return tasks
             
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"Failed to parse task split response as JSON: {e}")
-            logger.debug(f"Response was: {response.content}")
+            logger.debug(f"Raw content was: {response.content}")
             return []
 
     def analyze_codebase(self, project_path: str) -> str:

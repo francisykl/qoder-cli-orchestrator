@@ -14,6 +14,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .config import load_config, OrchestratorConfig
 from .llm_client import create_llm_client
 from .context_cache import ContextCache

@@ -594,8 +594,13 @@ COMPLETED TASKS SO FAR:
 LATEST CODEBASE CONTEXT:
 {codebase_summary}
 
-Based on the completed 'Discovery' or 'Analysis' tasks, split the remaining objectives into highly specific, file-level tasks.
-DO NOT include tasks that are already completed.
+Based on the completed 'Discovery' or 'Analysis' tasks, split the remaining objectives into highly specific, "oriented" tasks.
+### Requirements for Refinement:
+1. **Incorporate Findings**: Use the explicit information and gaps identified in the completed tasks to sharpen the remaining plan.
+2. **Atomic & Actionable**: Ensure all remaining tasks have specific file paths and clear success criteria.
+3. **No Redundancy**: DO NOT include tasks that are already completed.
+4. **Correction**: If discovery findings suggest the previous approach was flawed, redefine the remaining tasks entirely to fix the course.
+
 Ensure dependencies correctly reference existing and new task IDs.
 """
         
@@ -897,14 +902,19 @@ Ensure dependencies correctly reference existing and new task IDs.
                         task.error = str(e)
                 
                 # Check if any completed tasks provide new discovery info
-                # If an 'architect' or 'discovery' task finished, we might want to re-plan
-                should_replan = any(
-                    t.status == "completed" and (t.subagent == "architect" or "analyze" in t.description.lower())
+                # If an 'architect' or 'discovery' task finished, we MUST re-plan
+                # to ensure we use the findings for subsequent tasks and avoid "rushing".
+                discovery_completed = any(
+                    t.status == "completed" and (
+                        t.subagent == "discovery-specialist" or 
+                        t.subagent == "architect" or 
+                        "analyze" in t.description.lower()
+                    )
                     for t in ready_tasks
                 )
                 
-                if should_replan and self.config.execution.enable_speculative: # Using speculative as a proxy for 'smart re-planning'
-                    logger.info("Discovery task completed. Triggering plan refinement...")
+                if discovery_completed:
+                    logger.info("Discovery/Architect task completed. Triggering mandatory plan refinement...")
                     self.refine_plan()
                 else:
                     # Refresh codebase analysis cache for the next iteration

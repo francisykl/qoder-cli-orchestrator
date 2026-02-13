@@ -50,6 +50,7 @@ class QoderContext:
         self.wiki_content: Dict[str, str] = {}
         self.skills: Dict[str, str] = {}
         self.rules: str = ""
+        self.subagents: Dict[str, str] = {}
         self._load_all()
 
     def _load_all(self):
@@ -76,6 +77,16 @@ class QoderContext:
             with open(self.rules_file, 'r') as f:
                 self.rules = f.read()
             logger.info("Loaded project rules")
+        
+        # Load Subagents from root directory
+        subagents_path = self.project_dir / "subagents"
+        if subagents_path.exists():
+            for subagent_file in subagents_path.glob("*.md"):
+                with open(subagent_file, 'r') as f:
+                    content = f.read()
+                    name = subagent_file.stem
+                    self.subagents[name] = content
+            logger.info(f"Loaded {len(self.subagents)} subagents from root")
 
     def update_wiki(self, page_name: str, content: str, reason: str):
         """Update a wiki page when content strays."""
@@ -119,6 +130,10 @@ class QoderContext:
         # Add relevant skills
         if task.subagent in self.skills:
             context_parts.append(f"# Skill: {task.subagent}\n{self.skills[task.subagent]}")
+            
+        # Add Subagent Instructions
+        if task.subagent in self.subagents:
+            context_parts.append(f"# Subagent Instructions: {task.subagent}\n{self.subagents[task.subagent]}")
         
         return "\n\n---\n\n".join(context_parts)
 
@@ -366,7 +381,7 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
             env["QODER_PAT"] = self.pat
             
             # Build command
-            cmd = ["qoder", "/agent", task.subagent, enhanced_description]
+            cmd = ["qoder", "--yolo", "-p", enhanced_description]
             
             # Execute
             result = subprocess.run(

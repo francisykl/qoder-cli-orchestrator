@@ -193,7 +193,7 @@ Make the task more granular
 3. **Check Qoder CLI**:
 ```bash
 # Test Qoder CLI directly
-qoder /agent backend-dev "simple test task"
+qoder -p "simple test task" --yolo
 ```
 
 ### All Tasks Fail
@@ -213,7 +213,7 @@ tail -n 100 orchestration.log
 2. **Test Qoder CLI**:
 ```bash
 qoder --version
-qoder /ask "test"
+qoder -p "test" --yolo
 ```
 
 3. **Verify PAT**:
@@ -366,7 +366,7 @@ Failed to parse LLM response as JSON
 1. **Check LLM provider**:
 ```yaml
 llm:
-  provider: qoder  # Most reliable
+  provider: qoder  # uses -p and --yolo
 ```
 
 2. **Increase temperature**:

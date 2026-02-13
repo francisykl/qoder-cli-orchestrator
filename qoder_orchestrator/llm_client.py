@@ -151,17 +151,17 @@ class QoderCLIClient(CLIBasedLLMClient):
         """Build Qoder CLI command."""
         cmd = ["qoder"]
         
-        # Add mode (default to /ask)
-        mode = kwargs.get("mode", "/ask")
-        cmd.append(mode)
+        # Use --yolo to avoid interactive permission prompts
+        cmd.append("--yolo")
         
-        # Add agent if specified
-        if "agent" in kwargs:
-            cmd.append(kwargs["agent"])
-        
-        # Add the prompt
+        # Use -p (or --print) for non-interactive prompt
+        cmd.append("-p")
         cmd.append(prompt)
         
+        # Add output format if specified
+        if "output_format" in kwargs:
+            cmd.extend(["-f", kwargs["output_format"]])
+            
         return cmd
     
     def split_tasks(self, prompt: str, context: str) -> List[Dict]:
@@ -203,7 +203,7 @@ Rules:
 - Be specific about file scope when possible
 """
         
-        response = self.execute(task_split_prompt, mode="/ask")
+        response = self.execute(task_split_prompt, output_format="json")
         
         if not response.success:
             logger.error("Task splitting failed")
@@ -270,7 +270,7 @@ Return a JSON object with this structure:
 }}
 """
         
-        response = self.execute(analysis_prompt, mode="/ask")
+        response = self.execute(analysis_prompt, output_format="json")
         
         if not response.success:
             return {"met": False, "reasoning": "Analysis failed", "missing": [], "next_steps": []}
@@ -333,7 +333,7 @@ Return JSON:
 }}
 """
         
-        response = self.execute(learning_prompt, mode="/ask")
+        response = self.execute(learning_prompt, output_format="json")
         
         if not response.success:
             return None

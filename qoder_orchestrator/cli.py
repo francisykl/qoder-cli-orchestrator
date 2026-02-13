@@ -149,7 +149,9 @@ class QoderContext:
         task_lower = task_description.lower()
         
         # Check for specific keywords
-        if any(kw in task_lower for kw in ['database', 'migration', 'schema', 'query', 'sql']):
+        if any(kw in task_lower for kw in ['discovery', 'analyze', 'analysis', 'research', 'audit', 'gap-analysis', 'investigate', 'find', 'explore']):
+            return 'discovery-specialist'
+        elif any(kw in task_lower for kw in ['database', 'migration', 'schema', 'query', 'sql']):
             return 'database-specialist'
         elif any(kw in task_lower for kw in ['test', 'testing', 'unit test', 'integration test', 'e2e']):
             return 'testing-specialist'
@@ -167,7 +169,7 @@ class QoderContext:
             return 'migration-specialist'
         elif any(kw in task_lower for kw in ['backend', 'api', 'server', 'service']):
             return 'backend-dev'
-        elif any(kw in task_lower for kw in ['frontend', 'ui', 'component', 'react', 'vue']):
+        elif any(kw in task_lower for kw in ['frontend', 'ui', 'component', 'react', 'vue', 'flutter']):
             return 'frontend-dev'
         elif any(kw in task_lower for kw in ['architecture', 'design', 'structure', 'system']):
             return 'architect'
@@ -218,8 +220,28 @@ class QoderContext:
             context_parts.append(f"# Subagent Instructions: {task.subagent}\n{self.subagents[task.subagent]}")
         
         return "\n\n---\n\n".join(context_parts)
+
+    def get_all_subagents_summary(self) -> str:
+        """Get a concise summary of all available subagents and their capabilities."""
+        summary_parts = ["# Available Subagents"]
+        
+        for name, metadata in self.subagent_metadata.items():
+            desc = metadata.get('description', 'No description available')
+            summary_parts.append(f"## {name}\n**Description**: {desc}")
+            
+            if 'capabilities' in metadata:
+                summary_parts.append("**Capabilities**:")
+                for cap in metadata['capabilities']:
+                    summary_parts.append(f"- {cap}")
+            
+            if 'task_types' in metadata:
+                summary_parts.append(f"**Best for**: {', '.join(metadata['task_types'])}")
+            
+            summary_parts.append("")
+            
+        return "\n".join(summary_parts)
     
-    def build_enhanced_prompt(self, task: 'Task', iteration: int = 0) -> str:
+    def build_enhanced_prompt(self, task: 'Task', iteration: int = 0, dependency_outputs: Optional[Dict[str, str]] = None) -> str:
         """Build an enhanced, structured prompt with task metadata and context."""
         prompt_parts = []
         
@@ -232,6 +254,18 @@ class QoderContext:
         # Dependencies
         if task.dependencies:
             prompt_parts.append(f"**Dependencies**: {', '.join(task.dependencies)} (must be completed first)")
+            
+            # Add dependency outputs if available
+            if dependency_outputs:
+                relevant_outputs = {tid: out for tid, out in dependency_outputs.items() if tid in task.dependencies}
+                if relevant_outputs:
+                    prompt_parts.append("\n### Dependency Outputs")
+                    for tid, output in relevant_outputs.items():
+                        prompt_parts.append(f"#### Output from {tid}:")
+                        # Truncate if too long to avoid exceeding context window
+                        if len(output) > 5000:
+                            output = output[:5000] + "\n... (further output truncated) ..."
+                        prompt_parts.append(output)
         
         # File scope
         if task.files_scope:
@@ -445,12 +479,13 @@ class Orchestrator:
         # 1. Get high-level codebase summary (cached)
         codebase_summary = self.qoder_context.get_codebase_summary(self.llm_client)
         
-        # 2. Get specific context for splitting (rules, general wiki)
+        # 2. Get specific context for splitting (rules, subagent summaries)
+        subagents_summary = self.qoder_context.get_all_subagents_summary()
         dummy_task = Task("split", "Splitting tasks", "architect", component="general")
         context = self.qoder_context.get_context_for_task(dummy_task)
         
         # Combine for splitting
-        full_context = f"{codebase_summary}\n\n{context}"
+        full_context = f"{codebase_summary}\n\n{subagents_summary}\n\n{context}"
         
         # Call LLM to split tasks
         raw_tasks = self.llm_client.split_tasks(self.original_prompt, full_context)
@@ -477,38 +512,38 @@ class Orchestrator:
         self._save_plan()
 
     def _mock_task_split(self) -> Dict[str, Task]:
-        """Mock task splitting - replace with real LLM call."""
+        """Mock task splitting with discovery-first approach."""
         return {
             "t1": Task(
                 "t1",
-                "Analyze project structure and define architecture",
-                "architect",
+                "Analyze codebase for existing backend integration and feature gaps",
+                "discovery-specialist",
                 [],
-                ["docs/architecture.md"],
+                ["lib/**", "backend/**"],
                 component="general"
             ),
             "t2": Task(
                 "t2",
-                "Implement backend API endpoints",
-                "backend-dev",
+                "Define architectural changes and API contracts based on gap analysis",
+                "architect",
                 ["t1"],
-                ["backend/api.py", "backend/models.py"],
-                component="backend"
+                ["docs/architecture.md"],
+                component="general"
             ),
             "t3": Task(
                 "t3",
-                "Create frontend components",
-                "frontend-dev",
-                ["t1"],
-                ["app/frontend/components/*.js"],
-                component="frontend"
+                "Implement backend services and models",
+                "backend-dev",
+                ["t2"],
+                ["backend/api.py", "backend/models.py"],
+                component="backend"
             ),
             "t4": Task(
                 "t4",
-                "Integrate frontend with backend API",
+                "Integrate frontend components with new backend services",
                 "frontend-dev",
-                ["t2", "t3"],
-                ["app/frontend/api.js"],
+                ["t3"],
+                ["lib/ui/**", "lib/providers/**"],
                 component="frontend"
             )
         }
@@ -526,6 +561,79 @@ class Orchestrator:
             }, f, indent=2)
         
         logger.info(f"Plan saved to {plan_file}")
+
+    def refine_plan(self):
+        """
+        Re-evaluate the plan based on new information from completed tasks.
+        Preserves completed tasks while potentially splitting remaining objectives.
+        """
+        logger.info(f"Refining Plan Phase: Iteration {self.current_iteration}")
+        
+        # 1. Get current project state (latest content, wiki, etc)
+        codebase_summary = self.qoder_context.get_codebase_summary(self.llm_client, force=True)
+        
+        # 2. Get history of what happened so far
+        completed_tasks_history = [
+            {
+                "id": t.id,
+                "description": t.description,
+                "output": t.output
+            }
+            for t in self.tasks.values() if t.status == "completed"
+        ]
+        
+        # 3. Build a prompt for refinement
+        refine_prompt = f"""Refine the execution plan based on new discovery results.
+        
+ORIGINAL OBJECTIVE:
+{self.original_prompt}
+
+COMPLETED TASKS SO FAR:
+{json.dumps(completed_tasks_history, indent=2)}
+
+LATEST CODEBASE CONTEXT:
+{codebase_summary}
+
+Based on the completed 'Discovery' or 'Analysis' tasks, split the remaining objectives into highly specific, file-level tasks.
+DO NOT include tasks that are already completed.
+Ensure dependencies correctly reference existing and new task IDs.
+"""
+        
+        # 4. Call LLM to get refined tasks
+        dummy_task = Task("refine", "Refining tasks", "architect", component="general")
+        context = self.qoder_context.get_context_for_task(dummy_task)
+        full_context = f"{codebase_summary}\n\n{context}"
+        
+        raw_refined_tasks = self.llm_client.split_tasks(refine_prompt, full_context)
+        
+        if not raw_refined_tasks:
+            logger.warning("Plan refinement returned no new tasks. Keeping existing plan.")
+            return
+
+        # 5. Merge new tasks into existing task list
+        # We keep "completed" and "running" tasks as they are
+        preserved_tasks = {tid: t for tid, t in self.tasks.items() if t.status in ["completed", "running"]}
+        
+        # Add new refined tasks
+        new_tasks = {}
+        for t in raw_refined_tasks:
+            task_id = t.get("id", f"r{len(new_tasks) + 1}")
+            # Ensure we don't overwrite completed IDs unless explicitly desired
+            if task_id in preserved_tasks:
+                task_id = f"refined_{task_id}"
+                
+            new_tasks[task_id] = Task(
+                id=task_id,
+                description=t.get("description", ""),
+                subagent=t.get("subagent", "architect"),
+                dependencies=t.get("dependencies", []),
+                files_scope=t.get("files_scope", []),
+                component=t.get("component", "general")
+            )
+        
+        self.tasks = {**preserved_tasks, **new_tasks}
+        logger.info(f"Plan refined. Total tasks now: {len(self.tasks)}")
+        self._save_plan()
 
     def _save_task_output(self, task_id: str, stdout: str, stderr: str, success: bool):
         """Save task output to file.
@@ -601,10 +709,18 @@ class Orchestrator:
             logger.info(f"[{task.id}] Attempt {attempt}/{max_attempts}")
             
             try:
+                # Prepare dependency outputs
+                dependency_outputs = {
+                    tid: self.tasks[tid].output 
+                    for tid in task.dependencies 
+                    if tid in self.tasks and self.tasks[tid].output
+                }
+                
                 # Build enhanced prompt with task metadata and context
                 enhanced_description = self.qoder_context.build_enhanced_prompt(
                     task, 
-                    iteration=self.current_iteration
+                    iteration=self.current_iteration,
+                    dependency_outputs=dependency_outputs
                 )
                 
                 # Prepare environment
@@ -780,10 +896,21 @@ class Orchestrator:
                         task.status = "failed"
                         task.error = str(e)
                 
-                # Refresh codebase analysis cache for the next iteration
-                # This ensures the LLM sees the results of the previous tasks
-                logger.info("Refreshing codebase analysis cache...")
-                self.qoder_context.get_codebase_summary(self.llm_client, force=True)
+                # Check if any completed tasks provide new discovery info
+                # If an 'architect' or 'discovery' task finished, we might want to re-plan
+                should_replan = any(
+                    t.status == "completed" and (t.subagent == "architect" or "analyze" in t.description.lower())
+                    for t in ready_tasks
+                )
+                
+                if should_replan and self.config.execution.enable_speculative: # Using speculative as a proxy for 'smart re-planning'
+                    logger.info("Discovery task completed. Triggering plan refinement...")
+                    self.refine_plan()
+                else:
+                    # Refresh codebase analysis cache for the next iteration
+                    # This ensures the LLM sees the results of the previous tasks
+                    logger.info("Refreshing codebase analysis cache...")
+                    self.qoder_context.get_codebase_summary(self.llm_client, force=True)
                 
                 self.current_iteration += 1
                 self._save_plan()

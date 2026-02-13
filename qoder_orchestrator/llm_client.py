@@ -185,10 +185,10 @@ class QoderCLIClient(CLIBasedLLMClient):
             "architect", "backend-dev", "frontend-dev", "database-specialist",
             "testing-specialist", "devops-specialist", "security-specialist",
             "documentation-specialist", "api-designer", "performance-specialist",
-            "migration-specialist"
+            "migration-specialist", "discovery-specialist"
         ])
         
-        task_split_prompt = f"""Divide this high-level objective and project context into **small, atomic, and executable tasks** for better progress visibility.
+        task_split_prompt = f"""Analyze the provided high-level objective and project context to create a highly specific, granular execution plan.
 
 OBJECTIVE:
 {prompt}
@@ -199,26 +199,42 @@ PROJECT CONTEXT:
 AVAILABLE SUBAGENTS:
 {subagent_list}
 
-Each task must be granular (e.g., "Create database schema" then "Implement user model" then "Add migration", rather than "Implement whole backend").
+### Planning Strategy:
+1. **Discovery First**: IF the objective involves setting up new systems, migrating legacy code, or is otherwise broad/ambiguous, the VERY FIRST task(s) MUST be assigned to 'discovery-specialist'. Use them to audit the codebase, identify feature gaps, or research technical feasibility.
+2. **Impact Analysis**: Identify exactly which files, components, and modules will be affected.
+3. **Atomic Breakdown**: Split large migrations or feature additions into small, verifiable steps. AVOID generic tasks like "Build backend".
+4. **Architect vs. Discovery**: Use 'discovery-specialist' to FIND information and gaps (e.g., "Audit backend for missing Supabase integration"). Use 'architect' to DESIGN new structures or define API contracts (e.g., "Design Supabase schema based on audit findings").
+5. **Specific Descriptions**: Task descriptions MUST be actionable. **BAD**: "Setup server". **GOOD**: "Create .env file with Supabase credentials" or "Define 'users' table schema in Supabase".
 
-Return a JSON array of tasks with this structure:
+### Requirements for each Task:
+- **id**: Unique identifier (e.g., t1, t2).
+- **description**: Must be specific. **INCLUDE** file paths when possible.
+- **subagent**: One of the available subagents.
+- **dependencies**: List of task IDs that MUST be completed before this one.
+- **files_scope**: List of EXACT file paths or directory patterns.
+- **component**: Categorize as backend, frontend, general, etc.
+
+### Example Plan for "Add Auth":
 [
   {{
     "id": "t1",
-    "description": "Clear, specific, atomic task description",
-    "subagent": "selected-subagent-name",
-    "dependencies": ["t0"],
-    "files_scope": ["path/to/file.py"],
-    "component": "auth|api|frontend|general"
+    "description": "Analyze existing auth flow and identify required Supabase edge functions",
+    "subagent": "discovery-specialist",
+    "dependencies": [],
+    "files_scope": ["lib/auth/**"],
+    "component": "backend"
+  }},
+  {{
+    "id": "t2",
+    "description": "Design Supabase Auth configuration and session management protocol",
+    "subagent": "architect",
+    "dependencies": ["t1"],
+    "files_scope": ["docs/auth_design.md"],
+    "component": "general"
   }}
 ]
 
-Rules:
-- **Maximum Granularity**: No task should take longer than ~5-10 minutes of AI work.
-- **Independence**: Each task should be uniquely identifiable and executable.
-- **Subagent Matching**: Assign the most specialized subagent from the list above based on the task description.
-- **Dependencies**: Form a valid Directed Acyclic Graph (DAG) with no cycles.
-- **File Scope**: Be specific about which files are involved in each small step.
+Return a JSON array of tasks:
 """
         
         response = self.execute(task_split_prompt, output_format="json")

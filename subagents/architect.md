@@ -141,6 +141,10 @@ app/
   utils/        # Shared utilities
 ```
 
+**Architectural Hand-off**:
+- **ALWAYS** use 'discovery-specialist' for initial analysis of what exists or what is missing.
+- **ONLY** use 'architect' once requirements are clear to design the new system or modifications based on discovery findings.
+
 **Decision Framework:**
 1. **Understand Requirements**: Functional and non-functional requirements
 2. **Identify Constraints**: Time, budget, team skills, existing systems

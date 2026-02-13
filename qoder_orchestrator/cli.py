@@ -543,6 +543,12 @@ def main():
         default=10,
         help="Maximum iterations (default: 10)"
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="qoder-orchestrator 1.0.0",
+        help="Show version and exit"
+    )
     
     args = parser.parse_args()
     

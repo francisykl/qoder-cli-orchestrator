@@ -176,7 +176,14 @@ class QoderCLIClient(CLIBasedLLMClient):
             List of task dictionaries
         """
         # Build a structured prompt for task splitting
-        task_split_prompt = f"""Given this objective and project context, break it down into granular, executable tasks.
+        subagent_list = ", ".join([
+            "architect", "backend-dev", "frontend-dev", "database-specialist",
+            "testing-specialist", "devops-specialist", "security-specialist",
+            "documentation-specialist", "api-designer", "performance-specialist",
+            "migration-specialist"
+        ])
+        
+        task_split_prompt = f"""Divide this high-level objective and project context into **small, atomic, and executable tasks** for better progress visibility.
 
 OBJECTIVE:
 {prompt}
@@ -184,12 +191,17 @@ OBJECTIVE:
 PROJECT CONTEXT:
 {context}
 
+AVAILABLE SUBAGENTS:
+{subagent_list}
+
+Each task must be granular (e.g., "Create database schema" then "Implement user model" then "Add migration", rather than "Implement whole backend").
+
 Return a JSON array of tasks with this structure:
 [
   {{
     "id": "t1",
-    "description": "Clear, specific task description",
-    "subagent": "backend-dev|frontend-dev|architect|qa-agent",
+    "description": "Clear, specific, atomic task description",
+    "subagent": "selected-subagent-name",
     "dependencies": ["t0"],
     "files_scope": ["path/to/file.py"],
     "component": "auth|api|frontend|general"
@@ -197,10 +209,11 @@ Return a JSON array of tasks with this structure:
 ]
 
 Rules:
-- Each task should be independently executable
-- Dependencies should form a valid DAG (no cycles)
-- Use appropriate subagent for each task
-- Be specific about file scope when possible
+- **Maximum Granularity**: No task should take longer than ~5-10 minutes of AI work.
+- **Independence**: Each task should be uniquely identifiable and executable.
+- **Subagent Matching**: Assign the most specialized subagent from the list above based on the task description.
+- **Dependencies**: Form a valid Directed Acyclic Graph (DAG) with no cycles.
+- **File Scope**: Be specific about which files are involved in each small step.
 """
         
         response = self.execute(task_split_prompt, output_format="json")

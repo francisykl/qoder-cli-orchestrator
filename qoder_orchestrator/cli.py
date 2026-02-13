@@ -15,16 +15,10 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field, asdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from .config import load_config, OrchestratorConfig
+from .llm_client import create_llm_client
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler('orchestration.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Initial logging setup (will be reconfigured per orchestrator instance)
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -41,7 +35,7 @@ class Task:
     error: Optional[str] = None
 
 class QoderContext:
-    """Manages Qoder wiki, skills, and rules for the project."""
+    """Manages Qoder wiki, skills, rules, and subagent metadata for the project."""
     def __init__(self, project_dir: Path):
         self.project_dir = project_dir
         self.wiki_dir = project_dir / ".qoder" / "wiki"
@@ -50,7 +44,8 @@ class QoderContext:
         self.wiki_content: Dict[str, str] = {}
         self.skills: Dict[str, str] = {}
         self.rules: str = ""
-        self.subagents: Dict[str, str] = {}
+        self.subagents: Dict[str, str] = {}  # Full content including frontmatter
+        self.subagent_metadata: Dict[str, Dict[str, Any]] = {}  # Parsed metadata
         self._load_all()
 
     def _load_all(self):
@@ -86,7 +81,11 @@ class QoderContext:
                     content = f.read()
                     name = subagent_file.stem
                     self.subagents[name] = content
-            logger.info(f"Loaded {len(self.subagents)} subagents from root")
+                    # Parse YAML frontmatter
+                    metadata = self._parse_frontmatter(content)
+                    if metadata:
+                        self.subagent_metadata[name] = metadata
+            logger.info(f"Loaded {len(self.subagents)} subagents with metadata")
 
     def update_wiki(self, page_name: str, content: str, reason: str):
         """Update a wiki page when content strays."""
@@ -111,6 +110,64 @@ class QoderContext:
         self.skills[skill_name] = content
         logger.info(f"Updated skill '{skill_name}': {reason}")
 
+    def _parse_frontmatter(self, content: str) -> Optional[Dict[str, Any]]:
+        """Parse YAML frontmatter from markdown content."""
+        import yaml
+        
+        if not content.startswith('---'):
+            return None
+        
+        try:
+            # Extract frontmatter between --- markers
+            parts = content.split('---', 2)
+            if len(parts) < 3:
+                return None
+            
+            frontmatter_text = parts[1].strip()
+            metadata = yaml.safe_load(frontmatter_text)
+            return metadata
+        except Exception as e:
+            logger.warning(f"Failed to parse frontmatter: {e}")
+            return None
+    
+    def get_subagent_metadata(self, subagent_name: str) -> Optional[Dict[str, Any]]:
+        """Get parsed metadata for a subagent."""
+        return self.subagent_metadata.get(subagent_name)
+    
+    def match_subagent_to_task(self, task_description: str, task_type: Optional[str] = None) -> str:
+        """Match a task to the most appropriate subagent based on capabilities."""
+        # Simple keyword matching for now
+        # In production, this would use LLM-based matching
+        
+        task_lower = task_description.lower()
+        
+        # Check for specific keywords
+        if any(kw in task_lower for kw in ['database', 'migration', 'schema', 'query', 'sql']):
+            return 'database-specialist'
+        elif any(kw in task_lower for kw in ['test', 'testing', 'unit test', 'integration test', 'e2e']):
+            return 'testing-specialist'
+        elif any(kw in task_lower for kw in ['docker', 'deploy', 'ci/cd', 'kubernetes', 'infrastructure']):
+            return 'devops-specialist'
+        elif any(kw in task_lower for kw in ['security', 'auth', 'authentication', 'authorization', 'vulnerability']):
+            return 'security-specialist'
+        elif any(kw in task_lower for kw in ['documentation', 'readme', 'docs', 'api doc']):
+            return 'documentation-specialist'
+        elif any(kw in task_lower for kw in ['api design', 'rest', 'graphql', 'endpoint']):
+            return 'api-designer'
+        elif any(kw in task_lower for kw in ['performance', 'optimize', 'slow', 'cache', 'profiling']):
+            return 'performance-specialist'
+        elif any(kw in task_lower for kw in ['migrate', 'refactor', 'upgrade', 'legacy']):
+            return 'migration-specialist'
+        elif any(kw in task_lower for kw in ['backend', 'api', 'server', 'service']):
+            return 'backend-dev'
+        elif any(kw in task_lower for kw in ['frontend', 'ui', 'component', 'react', 'vue']):
+            return 'frontend-dev'
+        elif any(kw in task_lower for kw in ['architecture', 'design', 'structure', 'system']):
+            return 'architect'
+        
+        # Default to architect for planning tasks
+        return 'architect'
+    
     def get_context_for_task(self, task: 'Task') -> str:
         """Build context string for a task including relevant wiki/skills/rules."""
         context_parts = []
@@ -136,6 +193,50 @@ class QoderContext:
             context_parts.append(f"# Subagent Instructions: {task.subagent}\n{self.subagents[task.subagent]}")
         
         return "\n\n---\n\n".join(context_parts)
+    
+    def build_enhanced_prompt(self, task: 'Task', iteration: int = 0) -> str:
+        """Build an enhanced, structured prompt with task metadata and context."""
+        prompt_parts = []
+        
+        # Task header
+        prompt_parts.append(f"# Task: {task.description}")
+        prompt_parts.append(f"**Task ID**: {task.id}")
+        prompt_parts.append(f"**Component**: {task.component}")
+        prompt_parts.append(f"**Iteration**: {iteration}")
+        
+        # Dependencies
+        if task.dependencies:
+            prompt_parts.append(f"**Dependencies**: {', '.join(task.dependencies)} (must be completed first)")
+        
+        # File scope
+        if task.files_scope:
+            prompt_parts.append(f"**Files in Scope**: {', '.join(task.files_scope)}")
+        
+        # Subagent metadata
+        metadata = self.get_subagent_metadata(task.subagent)
+        if metadata:
+            prompt_parts.append("\n## Your Role and Capabilities")
+            prompt_parts.append(f"You are a **{metadata.get('name', task.subagent)}**: {metadata.get('description', '')}")
+            
+            if 'capabilities' in metadata:
+                prompt_parts.append("\n**Your Capabilities:**")
+                for cap in metadata['capabilities']:
+                    prompt_parts.append(f"- {cap}")
+        
+        # Context from wiki/skills/rules
+        context = self.get_context_for_task(task)
+        if context:
+            prompt_parts.append("\n## Project Context")
+            prompt_parts.append(context)
+        
+        # Success criteria
+        prompt_parts.append("\n## Success Criteria")
+        prompt_parts.append("- Complete the task as described")
+        prompt_parts.append("- Follow project rules and best practices")
+        prompt_parts.append("- Ensure code is tested and documented")
+        prompt_parts.append("- Report any deviations from documented approaches")
+        
+        return "\n\n".join(prompt_parts)
 
 class IntegrationRegistry:
     """Tracks shared state like models and interfaces between components."""
@@ -224,8 +325,47 @@ class Orchestrator:
         self.qoder_context = QoderContext(self.project_dir)
         self.decision_maker = DecisionMaker()
         self.current_iteration = 0
+        self.config = load_config(project_dir=self.project_dir)
+        self._setup_logging()
+        self._setup_output_dir()
         self.pat = self._get_pat()
         self._ensure_qoder_cli()
+        
+        # Initialize LLM client
+        self.llm_client = create_llm_client(
+            provider=self.config.llm.provider,
+            timeout=self.config.execution.task_timeout
+        )
+
+    def _setup_logging(self):
+        """Configure logging to use project directory."""
+        log_file = self.project_dir / self.config.log_file
+        log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+        
+        # Remove existing handlers
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        
+        # Configure new handlers
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            handlers=[
+                logging.FileHandler(log_file, mode='w'),  # Reset log file on each run
+                logging.StreamHandler(sys.stdout)
+            ],
+            force=True
+        )
+        
+        logger.info(f"Logging configured: {log_file}")
+        logger.info(f"Log level: {self.config.log_level}")
+
+    def _setup_output_dir(self):
+        """Create output directory for task outputs."""
+        self.output_dir = self.project_dir / self.config.execution.output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Task outputs will be saved to: {self.output_dir}")
 
     def _get_pat(self) -> str:
         """Retrieve Qoder PAT from .env.local or prompt user."""
@@ -272,14 +412,35 @@ class Orchestrator:
     def plan_and_split(self):
         """
         Split the prompt into tasks using LLM.
-        In production, this would call Qoder CLI to analyze the prompt.
         """
         logger.info(f"Planning Phase: Iteration {self.current_iteration}")
         logger.info(f"Original Prompt: {self.original_prompt}")
         
-        # TODO: Replace with actual LLM call via Qoder CLI
-        # For now, using a mock implementation
-        self.tasks = self._mock_task_split()
+        # Get project context
+        # We use a dummy Task to get global context (rules, general wiki)
+        dummy_task = Task("split", "Splitting tasks", "architect", component="general")
+        context = self.qoder_context.get_context_for_task(dummy_task)
+        
+        # Call LLM to split tasks
+        raw_tasks = self.llm_client.split_tasks(self.original_prompt, context)
+        
+        if not raw_tasks:
+            logger.error("Failed to split tasks. Falling back to default tasks.")
+            self.tasks = self._mock_task_split()
+        else:
+            # Convert raw dicts to Task objects
+            self.tasks = {}
+            for t in raw_tasks:
+                task_id = t.get("id", f"t{len(self.tasks) + 1}")
+                self.tasks[task_id] = Task(
+                    id=task_id,
+                    description=t.get("description", ""),
+                    subagent=t.get("subagent", "architect"),
+                    dependencies=t.get("dependencies", []),
+                    files_scope=t.get("files_scope", []),
+                    component=t.get("component", "general")
+                )
+            logger.info(f"Successfully split into {len(self.tasks)} atomic tasks")
         
         # Save the plan
         self._save_plan()
@@ -335,6 +496,40 @@ class Orchestrator:
         
         logger.info(f"Plan saved to {plan_file}")
 
+    def _save_task_output(self, task_id: str, stdout: str, stderr: str, success: bool):
+        """Save task output to file.
+        
+        Args:
+            task_id: Task identifier
+            stdout: Standard output from task
+            stderr: Standard error from task
+            success: Whether task succeeded
+        """
+        output_file = self.output_dir / f"{task_id}_output.txt"
+        
+        try:
+            with open(output_file, 'w') as f:
+                f.write(f"Task: {task_id}\n")
+                f.write(f"Status: {'SUCCESS' if success else 'FAILED'}\n")
+                f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 80 + "\n\n")
+                
+                if stdout:
+                    f.write("STDOUT:\n")
+                    f.write("-" * 80 + "\n")
+                    f.write(stdout)
+                    f.write("\n" + "-" * 80 + "\n\n")
+                
+                if stderr:
+                    f.write("STDERR:\n")
+                    f.write("-" * 80 + "\n")
+                    f.write(stderr)
+                    f.write("\n" + "-" * 80 + "\n")
+            
+            logger.debug(f"[{task_id}] Output saved to {output_file}")
+        except Exception as e:
+            logger.warning(f"[{task_id}] Failed to save output to file: {e}")
+
     def get_ready_tasks(self) -> List[Task]:
         """Get tasks that are ready to execute."""
         ready = []
@@ -366,56 +561,83 @@ class Orchestrator:
         logger.info(f"[{task.id}] Starting: {task.description}")
         task.status = "running"
         
-        try:
-            # Get context from wiki/skills/rules
-            context = self.qoder_context.get_context_for_task(task)
+        # Retry logic
+        max_attempts = self.config.retry.max_attempts
+        attempt = 0
+        
+        while attempt < max_attempts:
+            attempt += 1
+            logger.info(f"[{task.id}] Attempt {attempt}/{max_attempts}")
             
-            # Build enhanced description with context
-            enhanced_description = f"""{task.description}
-
-# Context from Project
-{context}
-
-IMPORTANT: Follow the project rules. If your approach differs from documented wiki/skills, note this in your output.
-"""
-            
-            # Prepare environment
-            env = os.environ.copy()
-            env["QODER_PERSONAL_ACCESS_TOKEN"] = self.pat
-            
-            # Build command
-            cmd = ["qoder", "--yolo", "-p", enhanced_description]
-            
-            # Execute
-            result = subprocess.run(
-                cmd,
-                cwd=str(self.project_dir),
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minute timeout
-            )
-            
-            if result.returncode == 0:
-                task.status = "completed"
-                task.output = result.stdout
-                logger.info(f"[{task.id}] Completed successfully")
+            try:
+                # Build enhanced prompt with task metadata and context
+                enhanced_description = self.qoder_context.build_enhanced_prompt(
+                    task, 
+                    iteration=self.current_iteration
+                )
                 
-                # Check if output indicates deviation from wiki/skills
-                self._check_and_update_context(task, result.stdout)
-            else:
+                # Prepare environment
+                env = os.environ.copy()
+                env["QODER_PERSONAL_ACCESS_TOKEN"] = self.pat
+                
+                # Build command
+                cmd = ["qoder", "--yolo", "-p", enhanced_description]
+                
+                # Add optional Qoder CLI parameters
+                if self.config.llm.model:
+                    cmd.extend(["--model", self.config.llm.model])
+                
+                if self.config.llm.max_output_tokens:
+                    cmd.extend(["--max-output-tokens", self.config.llm.max_output_tokens])
+                
+                # Execute
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(self.project_dir),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.config.execution.task_timeout
+                )
+                
+                if result.returncode == 0:
+                    task.status = "completed"
+                    task.output = result.stdout
+                    logger.info(f"[{task.id}] Completed successfully")
+                    logger.debug(f"[{task.id}] Output:\n{result.stdout}")
+                    if result.stderr:
+                        logger.debug(f"[{task.id}] Stderr:\n{result.stderr}")
+                    
+                    # Save output to file
+                    self._save_task_output(task.id, result.stdout, result.stderr, success=True)
+                    
+                    # Check if output indicates deviation from wiki/skills
+                    self._check_and_update_context(task, result.stdout)
+                    return task
+                else:
+                    task.status = "failed"
+                    task.error = result.stderr
+                    logger.error(f"[{task.id}] Failed: {result.stderr[:200]}...")  # Truncate error in main log
+                    logger.debug(f"[{task.id}] Full stderr:\n{result.stderr}")
+                    if result.stdout:
+                        logger.debug(f"[{task.id}] Stdout:\n{result.stdout}")
+                    
+                    # Save output to file
+                    self._save_task_output(task.id, result.stdout, result.stderr, success=False)
+                    
+            except subprocess.TimeoutExpired:
                 task.status = "failed"
-                task.error = result.stderr
-                logger.error(f"[{task.id}] Failed: {result.stderr}")
-                
-        except subprocess.TimeoutExpired:
-            task.status = "failed"
-            task.error = "Task timed out after 5 minutes"
-            logger.error(f"[{task.id}] Timeout")
-        except Exception as e:
-            task.status = "failed"
-            task.error = str(e)
-            logger.error(f"[{task.id}] Error: {e}")
+                task.error = f"Task timed out after {self.config.execution.task_timeout} seconds"
+                logger.error(f"[{task.id}] Timeout")
+            except Exception as e:
+                task.status = "failed"
+                task.error = str(e)
+                logger.error(f"[{task.id}] Error: {e}")
+            
+            if attempt < max_attempts:
+                wait_time = self.config.retry.backoff_factor ** attempt
+                logger.info(f"[{task.id}] Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
         
         return task
 
@@ -443,6 +665,33 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
             # For now, just log it
             logger.info(f"[{task.id}] Consider updating wiki/skills based on this task's output")
 
+    def _log_progress(self):
+        """Log current orchestration progress."""
+        total = len(self.tasks)
+        completed = sum(1 for t in self.tasks.values() if t.status == "completed")
+        running = sum(1 for t in self.tasks.values() if t.status == "running")
+        failed = sum(1 for t in self.tasks.values() if t.status == "failed")
+        pending = sum(1 for t in self.tasks.values() if t.status == "pending")
+        
+        logger.info("="*60)
+        logger.info(f"PROGRESS: {completed}/{total} completed | {running} running | {pending} pending | {failed} failed")
+        
+        if running > 0:
+            running_tasks = [t.id for t in self.tasks.values() if t.status == "running"]
+            logger.info(f"Currently running: {', '.join(running_tasks)}")
+        
+        if completed > 0:
+            completed_tasks = [t.id for t in self.tasks.values() if t.status == "completed"]
+            logger.info(f"Completed tasks: {', '.join(completed_tasks)}")
+        
+        if failed > 0:
+            failed_tasks = [(t.id, t.error) for t in self.tasks.values() if t.status == "failed"]
+            logger.error("Failed tasks:")
+            for task_id, error in failed_tasks:
+                logger.error(f"  - {task_id}: {error}")
+        
+        logger.info("="*60)
+
     def execute_loop(self, max_parallel: int = 3):
         """
         Main execution loop with parallel task execution.
@@ -451,6 +700,8 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
             max_parallel: Maximum number of tasks to run in parallel
         """
         logger.info("Starting execution loop")
+        logger.info(f"Configuration: timeout={self.config.execution.task_timeout}s, max_parallel={max_parallel}, max_iterations={self.config.execution.max_iterations}")
+        self._log_progress()
         
         with ThreadPoolExecutor(max_workers=max_parallel) as executor:
             while True:
@@ -463,9 +714,11 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
                 
                 if decision == "stop":
                     logger.info("Orchestration finished")
+                    self._log_progress()
                     break
                 elif decision == "hold":
                     logger.warning("Orchestration on HOLD - manual intervention needed")
+                    self._log_progress()
                     break
                 
                 # Get ready tasks
@@ -476,7 +729,8 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
                     time.sleep(1)
                     continue
                 
-                logger.info(f"Executing {len(ready_tasks)} tasks in parallel")
+                logger.info(f"\n--- Iteration {self.current_iteration + 1} ---")
+                logger.info(f"Executing {len(ready_tasks)} tasks in parallel: {', '.join([t.id for t in ready_tasks])}")
                 
                 # Submit tasks
                 futures = {
@@ -497,6 +751,7 @@ IMPORTANT: Follow the project rules. If your approach differs from documented wi
                 
                 self.current_iteration += 1
                 self._save_plan()
+                self._log_progress()
 
     def print_summary(self):
         """Print execution summary."""

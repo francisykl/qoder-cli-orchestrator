@@ -27,10 +27,11 @@ class RetryConfig:
 class LLMConfig:
     """Configuration for LLM integration."""
     provider: str = "qoder"  # qoder, openai, anthropic
-    model: Optional[str] = None  # e.g., gpt-4, claude-3-opus
+    model: Optional[str] = None  # For Qoder: auto, efficient, performance, ultimate, etc.
     api_key: Optional[str] = None
-    temperature: float = 0.7
-    max_tokens: int = 4000
+    temperature: float = 0.7  # Not used by Qoder CLI
+    max_tokens: int = 4000  # Not used by Qoder CLI
+    max_output_tokens: Optional[str] = None  # For Qoder: "16k" or "32k"
     timeout: int = 60
 
 
@@ -77,10 +78,11 @@ class ExecutionConfig:
     """Configuration for task execution."""
     max_parallel: int = 3
     max_iterations: int = 10
-    task_timeout: int = 300  # 5 minutes
+    task_timeout: int = 1500  # 25 minutes
     enable_speculative: bool = True
     enable_batch_processing: bool = True
     batch_similarity_threshold: float = 0.7
+    output_dir: str = ".qoder-outputs"  # Directory to store task outputs
 
 
 @dataclass

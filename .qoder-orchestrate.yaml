@@ -17,10 +17,11 @@ enable_incremental_updates: true  # Only re-run affected tasks
 execution:
   max_parallel: 3  # Maximum number of tasks to run in parallel
   max_iterations: 10  # Maximum iterations before stopping
-  task_timeout: 300  # Task timeout in seconds (5 minutes)
+  task_timeout: 1500  # Task timeout in seconds (25 minutes)
   enable_speculative: true  # Start likely-needed tasks early
   enable_batch_processing: true  # Group similar tasks
   batch_similarity_threshold: 0.7  # Similarity threshold for batching (0-1)
+  output_dir: .qoder-outputs  # Directory to store task outputs (stdout/stderr)
 
 # Retry configuration
 retry:
@@ -37,8 +38,10 @@ llm:
   provider: qoder  # qoder (default), claude
   # For Qoder CLI: uses /ask mode by default
   # For Claude CLI: requires claude CLI installation
-  temperature: 0.7  # LLM temperature (0-1)
-  max_tokens: 4000  # Maximum tokens per request
+  model: auto  # Qoder: auto, efficient, performance, ultimate, gmodel, kmodel, mmodel, qmodel, lite
+  max_output_tokens: 32k  # Qoder: "16k" or "32k" (optional)
+  temperature: 0.7  # LLM temperature (0-1) - not used by Qoder CLI
+  max_tokens: 4000  # Maximum tokens per request - not used by Qoder CLI
   timeout: 60  # CLI command timeout in seconds
 
 # Semantic search configuration

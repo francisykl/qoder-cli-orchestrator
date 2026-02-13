@@ -39,7 +39,10 @@ A production-ready orchestration system that intelligently splits high-level dev
 
 ### Install Qoder CLI
 ```bash
-npm install -g qoder
+npm install -g @qoder-ai/qodercli
+
+# Ensure 'qoder' command is available (symlink if needed)
+sudo ln -s $(which qodercli) /usr/local/bin/qoder
 qoder --version
 ```
 
@@ -254,7 +257,9 @@ Cache Hit Rate: 67.3%
 
 **Qoder CLI not found**:
 ```bash
-npm install -g qoder
+npm install -g @qoder-ai/qodercli
+# Create symlink 'qoder' if it doesn't exist
+ln -s $(which qodercli) $(dirname $(which qodercli))/qoder
 export PATH="$PATH:$(npm config get prefix)/bin"
 ```
 

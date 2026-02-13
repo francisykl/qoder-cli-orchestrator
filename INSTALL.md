@@ -241,7 +241,7 @@ mypy qoder_orchestrator/
 
 - **Python**: 3.8 or higher
 - **Git**: Required for rollback features
-- **Qoder CLI**: `npm install -g qoder`
+- **Qoder CLI**: `npm install -g @qoder-ai/qodercli` (and symlink `qoder` to `qodercli`)
 - **Disk Space**: ~500MB for embedding models (first run)
 - **Memory**: 2GB+ recommended
 
